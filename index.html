@@ -754,7 +754,10 @@ function buildSlot(index) {
   input.addEventListener('input', () => {
     const val = input.value.trim();
 
-    // Debounced suggestion fetch
+    // Cancel any pending card load — partial names must never reach the image API.
+    clearTimeout(timerLoad);
+
+    // Debounced suggestion fetch only (shows dropdown; does NOT load card images).
     clearTimeout(timerSugg);
     if (val.length >= 2) {
       timerSugg = setTimeout(async () => {
@@ -764,10 +767,7 @@ function buildSlot(index) {
     } else {
       closeList();
     }
-
-    // Debounced card load (fires if user stops typing without picking a suggestion)
-    clearTimeout(timerLoad);
-    timerLoad = setTimeout(() => confirmLoad(val), DEBOUNCE_LOAD);
+    // Card loads fire ONLY on: blur, Enter, or picking a suggestion.
   });
 
   input.addEventListener('keydown', e => {
@@ -841,10 +841,12 @@ async function loadCardIntoSlot(name, slot, imgWrap) {
     const url = await fetchCardImageUrl(name);
     imgWrap.innerHTML = '';
     const img = document.createElement('img');
-    img.alt         = name;
-    img.src         = url;
-    img.loading     = 'lazy';
-    img.crossOrigin = 'anonymous';
+    img.alt     = name;
+    img.src     = url;
+    img.loading = 'lazy';
+    // NOTE: do NOT set crossOrigin here — images.ygoprodeck.com does not
+    // send CORS headers, so crossOrigin="anonymous" blocks the load.
+    // For PDF export we use a CORS proxy on the URL instead (see exportPDF).
     imgWrap.appendChild(img);
     slot.classList.remove('loading');
   } catch {
@@ -943,9 +945,15 @@ async function exportPDF() {
       state.currentPage = pi;
       renderGrid();
 
-      // Wait for all images to settle
-      const imgs = gridEl.querySelectorAll('img');
-      await Promise.allSettled([...imgs].map(img =>
+      // For PDF: swap img srcs through a CORS proxy so html2canvas can read pixels.
+      // (Display images don't use crossOrigin; ygoprodeck images lack CORS headers.)
+      const PROXY = 'https://corsproxy.io/?';
+      const imgs = [...gridEl.querySelectorAll('img')];
+      const origSrcs = imgs.map(img => img.src);
+      imgs.forEach(img => { img.crossOrigin = 'anonymous'; img.src = PROXY + encodeURIComponent(img.src); });
+
+      // Wait for proxied images to load
+      await Promise.allSettled(imgs.map(img =>
         img.complete ? Promise.resolve() :
           new Promise(res => { img.onload = res; img.onerror = res; })
       ));
@@ -955,6 +963,9 @@ async function exportPDF() {
         useCORS: true, allowTaint: false,
         backgroundColor: '#13131a', scale: 2, logging: false
       });
+
+      // Restore original srcs after capture
+      imgs.forEach((img, i) => { img.removeAttribute('crossOrigin'); img.src = origSrcs[i]; });
 
       const data  = canvas.toDataURL('image/jpeg', 0.92);
       const pdfW  = pdf.internal.pageSize.getWidth();
