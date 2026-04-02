@@ -1,224 +1,875 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Yu-Gi-Oh Binder</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YGO Binder</title>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- CDN Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<style>
-body {
-  font-family: Arial, sans-serif;
-  background: #111;
-  color: white;
-  text-align: center;
-  margin: 0;
-  padding: 10px;
-}
+  <style>
+    /* ─── Reset & Base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-.controls {
-  margin-bottom: 10px;
-}
-
-button, select {
-  padding: 8px;
-  margin: 4px;
-  font-size: 14px;
-}
-
-.grid {
-  display: grid;
-  gap: 10px;
-  justify-content: center;
-  margin: 10px auto;
-}
-
-.card {
-  background: #222;
-  border: 2px solid #555;
-  border-radius: 8px;
-  padding: 5px;
-  width: 120px;
-}
-
-.card input {
-  width: 100%;
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-
-.card img {
-  width: 100%;
-  height: 160px;
-  object-fit: cover;
-  border-radius: 4px;
-  background: #000;
-}
-
-.pagination {
-  margin-top: 10px;
-}
-</style>
-</head>
-
-<body>
-
-<div class="controls">
-  <select id="gridSize">
-    <option value="2">2x2</option>
-    <option value="3" selected>3x3</option>
-    <option value="4">4x4</option>
-  </select>
-
-  <button onclick="prevPage()">Prev</button>
-  <span id="pageIndicator"></span>
-  <button onclick="nextPage()">Next</button>
-
-  <button onclick="downloadPDF()">Download PDF</button>
-</div>
-
-<div id="binder"></div>
-
-<script>
-const API = "https://db.ygoprodeck.com/api/v7/cardinfo.php?name=";
-
-let state = JSON.parse(localStorage.getItem("binderState")) || {
-  gridSize: 3,
-  pages: [[...Array(9)].map(() => "")],
-  currentPage: 0,
-  cache: {}
-};
-
-document.getElementById("gridSize").value = state.gridSize;
-
-function save() {
-  localStorage.setItem("binderState", JSON.stringify(state));
-}
-
-function createGrid() {
-  const size = state.gridSize;
-  const container = document.getElementById("binder");
-  container.innerHTML = "";
-
-  const grid = document.createElement("div");
-  grid.className = "grid";
-  grid.style.gridTemplateColumns = `repeat(${size}, 120px)`;
-
-  const slots = size * size;
-
-  if (!state.pages[state.currentPage]) {
-    state.pages[state.currentPage] = Array(slots).fill("");
-  }
-
-  for (let i = 0; i < slots; i++) {
-    const cardName = state.pages[state.currentPage][i] || "";
-
-    const card = document.createElement("div");
-    card.className = "card";
-
-    const input = document.createElement("input");
-    input.value = cardName;
-
-    const img = document.createElement("img");
-
-    if (state.cache[cardName]) {
-      img.src = state.cache[cardName];
+    :root {
+      --gold:       #c9a84c;
+      --gold-light: #e8ca7a;
+      --dark-bg:    #0d0d0f;
+      --panel-bg:   #13131a;
+      --card-bg:    #1a1a26;
+      --border:     #2a2a3a;
+      --sleeve:     #22223a;
+      --text:       #e8e4d8;
+      --muted:      #666688;
+      --accent:     #7b5ea7;
+      --danger:     #c0392b;
+      --radius:     6px;
+      --card-ratio: calc(614 / 421); /* official YGO ratio */
     }
 
-    input.addEventListener("change", async () => {
-      const name = input.value.trim();
-      state.pages[state.currentPage][i] = name;
-      save();
+    html, body {
+      height: 100%;
+      background: var(--dark-bg);
+      color: var(--text);
+      font-family: 'Georgia', 'Times New Roman', serif;
+    }
 
-      if (!name) {
-        img.src = "";
-        return;
-      }
+    /* ─── Grain overlay ─────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.5;
+    }
 
-      if (state.cache[name]) {
-        img.src = state.cache[name];
-        return;
-      }
+    /* ─── Layout ─────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
 
-      try {
-        const res = await fetch(API + encodeURIComponent(name));
-        const data = await res.json();
+    /* ─── Header ─────────────────────────────────────────────── */
+    header {
+      padding: 18px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-bg);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
 
-        const url = data.data[0].card_images[0].image_url;
+    .logo {
+      font-size: 1.4rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold);
+      font-weight: normal;
+      white-space: nowrap;
+      text-shadow: 0 0 18px rgba(201,168,76,0.3);
+    }
+    .logo span {
+      color: var(--gold-light);
+      font-style: italic;
+    }
 
-        state.cache[name] = url;
-        img.src = url;
-        save();
-      } catch {
-        img.src = "";
-      }
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    label.ctrl-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-right: 2px;
+    }
+
+    select, button {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 14px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    select:hover, button:hover {
+      border-color: var(--gold);
+    }
+    select:focus, button:focus {
+      outline: 2px solid var(--gold);
+      outline-offset: 2px;
+    }
+
+    button.primary {
+      background: var(--gold);
+      color: #0d0d0f;
+      border-color: var(--gold);
+      font-weight: bold;
+      letter-spacing: 0.05em;
+    }
+    button.primary:hover {
+      background: var(--gold-light);
+      border-color: var(--gold-light);
+    }
+
+    button.danger {
+      background: transparent;
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    button.danger:hover {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    /* ─── Main Content ─────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 16px;
+      gap: 24px;
+    }
+
+    /* ─── Binder Grid ─────────────────────────────────────────────── */
+    #binder {
+      width: 100%;
+      max-width: 860px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+      position: relative;
+    }
+
+    /* spine decoration */
+    #binder::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 16px; bottom: 16px;
+      width: 2px;
+      background: linear-gradient(to bottom, transparent, var(--border), transparent);
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    #grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    /* ─── Card Slot ─────────────────────────────────────────────── */
+    .card-slot {
+      background: var(--sleeve);
+      border: 2px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: border-color 0.2s;
+      position: relative;
+    }
+    .card-slot:hover {
+      border-color: var(--gold);
+    }
+    .card-slot.loading {
+      border-color: var(--accent);
+    }
+    .card-slot.error {
+      border-color: var(--danger);
+    }
+
+    /* Input area */
+    .slot-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .slot-input-wrap input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      padding: 6px 8px;
+      font-size: 0.75rem;
+      font-family: inherit;
+      outline: none;
+    }
+    .slot-input-wrap input::placeholder { color: var(--muted); }
+
+    .clear-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px 7px;
+      font-size: 0.85rem;
+      line-height: 1;
+      border-radius: 0;
+      transition: color 0.15s;
+    }
+    .clear-btn:hover { color: var(--danger); }
+
+    /* Image area */
+    .slot-image-wrap {
+      flex: 1;
+      position: relative;
+      aspect-ratio: 421 / 614;
+      background: var(--card-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .slot-image-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* Placeholder */
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.7rem;
+      text-align: center;
+      padding: 12px;
+    }
+    .placeholder svg {
+      opacity: 0.3;
+    }
+
+    /* Loading spinner */
+    .spinner {
+      width: 28px; height: 28px;
+      border: 2px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error badge */
+    .error-msg {
+      position: absolute;
+      bottom: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(192,57,43,0.85);
+      color: #fff;
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 20px;
+      white-space: nowrap;
+      max-width: 90%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ─── Pagination ─────────────────────────────────────────────── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .page-info {
+      font-size: 0.8rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      min-width: 90px;
+      text-align: center;
+    }
+
+    /* ─── Footer toolbar ─────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      background: var(--panel-bg);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .footer-left {
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .footer-right {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ─── PDF modal ─────────────────────────────────────────────── */
+    #pdf-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    #pdf-overlay.active { display: flex; }
+
+    #pdf-modal {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 32px 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      min-width: 260px;
+    }
+    #pdf-modal p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+    }
+    #pdf-progress {
+      width: 200px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #pdf-progress-bar {
+      height: 100%;
+      background: var(--gold);
+      transition: width 0.3s;
+      width: 0%;
+    }
+
+    /* ─── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      header { padding: 12px 14px; }
+      main { padding: 16px 8px; }
+      #binder { padding: 10px; }
+      #binder::before { display: none; }
+      .controls { gap: 6px; }
+    }
+    @media (max-width: 380px) {
+      .logo { font-size: 1rem; }
+      select, button { font-size: 0.75rem; padding: 6px 10px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">YGO <span>Binder</span></div>
+
+    <div class="controls">
+      <label class="ctrl-label" for="grid-size">Grid</label>
+      <select id="grid-size">
+        <option value="2">2 × 2</option>
+        <option value="3" selected>3 × 3</option>
+        <option value="4">4 × 4</option>
+      </select>
+
+      <button id="add-page-btn">+ Page</button>
+      <button id="delete-page-btn" class="danger">✕ Page</button>
+    </div>
+  </header>
+
+  <!-- ── Main ── -->
+  <main>
+    <!-- Binder grid -->
+    <div id="binder">
+      <div id="grid"></div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+      <button id="prev-btn">← Prev</button>
+      <div class="page-info" id="page-info">Page 1 of 1</div>
+      <button id="next-btn">Next →</button>
+    </div>
+  </main>
+
+  <!-- ── Footer ── -->
+  <footer>
+    <div class="footer-left">YGO Binder · Data via YGOPRODeck</div>
+    <div class="footer-right">
+      <button id="clear-all-btn" class="danger">Clear All</button>
+      <button id="pdf-btn" class="primary">⬇ Export PDF</button>
+    </div>
+  </footer>
+
+  <!-- ── PDF Progress Overlay ── -->
+  <div id="pdf-overlay">
+    <div id="pdf-modal">
+      <div style="color:var(--gold);font-size:1.1rem;letter-spacing:0.1em;">Exporting PDF…</div>
+      <div id="pdf-progress"><div id="pdf-progress-bar"></div></div>
+      <p id="pdf-status">Rendering page 1…</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   YGO BINDER – main.js
+   ─────────────────────────────────────────────────────────────────
+   State shape (persisted to localStorage under "ygo-binder"):
+   {
+     gridSize: 2|3|4,
+     currentPage: 0,
+     pages: [
+       ["Card Name", "", "Dark Magician", …],  // array length = gridSize²
+       …
+     ]
+   }
+═══════════════════════════════════════════════════════════════════ */
+
+// ── Constants ────────────────────────────────────────────────────
+const API_BASE   = 'https://db.ygoprodeck.com/api/v7/cardinfo.php?name=';
+const LS_STATE   = 'ygo-binder';          // main state key
+const LS_CACHE   = 'ygo-binder-cache';    // card image URL cache
+const RATE_LIMIT = 20;                    // max requests per second
+const DEBOUNCE   = 600;                   // ms before API call fires
+
+// ── Request-rate limiter ─────────────────────────────────────────
+const rateLimiter = (() => {
+  const queue  = [];
+  let tokens   = RATE_LIMIT;
+  let lastTick = Date.now();
+
+  function refill() {
+    const now = Date.now();
+    const elapsed = (now - lastTick) / 1000;
+    tokens = Math.min(RATE_LIMIT, tokens + elapsed * RATE_LIMIT);
+    lastTick = now;
+  }
+
+  function next() {
+    if (!queue.length) return;
+    refill();
+    if (tokens >= 1) {
+      tokens--;
+      const fn = queue.shift();
+      fn();
+      setTimeout(next, 0);
+    } else {
+      // wait until token available (~50ms granularity)
+      setTimeout(next, 50);
+    }
+  }
+
+  return function schedule(fn) {
+    return new Promise((resolve, reject) => {
+      queue.push(() => Promise.resolve(fn()).then(resolve).catch(reject));
+      if (queue.length === 1) next();
+    });
+  };
+})();
+
+// ── Image-URL cache ──────────────────────────────────────────────
+const imageCache = (() => {
+  let store = {};
+  try { store = JSON.parse(localStorage.getItem(LS_CACHE) || '{}'); } catch {}
+
+  return {
+    get(name) { return store[name.toLowerCase().trim()] || null; },
+    set(name, url) {
+      store[name.toLowerCase().trim()] = url;
+      try { localStorage.setItem(LS_CACHE, JSON.stringify(store)); } catch {}
+    }
+  };
+})();
+
+// ── State ────────────────────────────────────────────────────────
+let state = {
+  gridSize:    3,
+  currentPage: 0,
+  pages:       [Array(9).fill('')]
+};
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_STATE);
+    if (raw) state = JSON.parse(raw);
+  } catch {}
+}
+
+function saveState() {
+  try { localStorage.setItem(LS_STATE, JSON.stringify(state)); } catch {}
+}
+
+function slotsPerPage() { return state.gridSize * state.gridSize; }
+
+// Make sure the current page array has the right length after resize
+function normalizePage(arr) {
+  const n = slotsPerPage();
+  const copy = [...arr];
+  while (copy.length < n) copy.push('');
+  return copy.slice(0, n);
+}
+
+// ── DOM refs ─────────────────────────────────────────────────────
+const gridEl       = document.getElementById('grid');
+const pageSizeEl   = document.getElementById('grid-size');
+const pageInfoEl   = document.getElementById('page-info');
+const prevBtn      = document.getElementById('prev-btn');
+const nextBtn      = document.getElementById('next-btn');
+const addPageBtn   = document.getElementById('add-page-btn');
+const deletePageBtn= document.getElementById('delete-page-btn');
+const clearAllBtn  = document.getElementById('clear-all-btn');
+const pdfBtn       = document.getElementById('pdf-btn');
+const pdfOverlay   = document.getElementById('pdf-overlay');
+const pdfStatus    = document.getElementById('pdf-status');
+const pdfBar       = document.getElementById('pdf-progress-bar');
+
+// ── Fetch a card image URL (with cache + rate limiter) ────────────
+async function fetchCardImageUrl(name) {
+  const cached = imageCache.get(name);
+  if (cached) return cached;
+
+  return rateLimiter(async () => {
+    const resp = await fetch(API_BASE + encodeURIComponent(name));
+    if (!resp.ok) throw new Error('Not found');
+    const json = await resp.json();
+    const url  = json.data?.[0]?.card_images?.[0]?.image_url;
+    if (!url) throw new Error('No image');
+    imageCache.set(name, url);
+    return url;
+  });
+}
+
+// ── Build a single card slot element ────────────────────────────
+function buildSlot(index) {
+  const slot = document.createElement('div');
+  slot.className = 'card-slot';
+  slot.dataset.index = index;
+
+  // --- Input row ---
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'slot-input-wrap';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Card name…';
+  input.spellcheck = false;
+  input.autocomplete = 'off';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'clear-btn';
+  clearBtn.title = 'Clear slot';
+  clearBtn.textContent = '✕';
+  clearBtn.addEventListener('click', () => clearSlot(index, slot, input));
+
+  inputWrap.appendChild(input);
+  inputWrap.appendChild(clearBtn);
+
+  // --- Image area ---
+  const imgWrap = document.createElement('div');
+  imgWrap.className = 'slot-image-wrap';
+  showPlaceholder(imgWrap);
+
+  slot.appendChild(inputWrap);
+  slot.appendChild(imgWrap);
+
+  // --- Debounce timer ---
+  let debounceTimer = null;
+
+  function triggerLoad() {
+    const name = input.value.trim();
+    if (!name) { clearSlot(index, slot, input); return; }
+    state.pages[state.currentPage][index] = name;
+    saveState();
+    loadCardIntoSlot(name, slot, imgWrap);
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(triggerLoad, DEBOUNCE);
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { clearTimeout(debounceTimer); triggerLoad(); }
+  });
+
+  input.addEventListener('blur', () => {
+    clearTimeout(debounceTimer);
+    triggerLoad();
+  });
+
+  return { slot, input, imgWrap };
+}
+
+// ── Show placeholder SVG ─────────────────────────────────────────
+function showPlaceholder(wrap) {
+  wrap.innerHTML = `
+    <div class="placeholder">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+        <rect x="2" y="2" width="32" height="32" rx="4" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="13" cy="14" r="3" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M2 25 L10 17 L17 23 L24 15 L34 25" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+      <span>Type a card name</span>
+    </div>`;
+}
+
+// ── Show spinner ─────────────────────────────────────────────────
+function showSpinner(wrap) {
+  wrap.innerHTML = '<div class="spinner"></div>';
+}
+
+// ── Load card image into a slot ──────────────────────────────────
+async function loadCardIntoSlot(name, slot, imgWrap) {
+  slot.classList.remove('error');
+  slot.classList.add('loading');
+  showSpinner(imgWrap);
+
+  try {
+    const url = await fetchCardImageUrl(name);
+    imgWrap.innerHTML = '';
+    const img = document.createElement('img');
+    img.alt  = name;
+    img.src  = url;
+    img.loading = 'lazy';
+    img.crossOrigin = 'anonymous';          // needed for html2canvas
+    imgWrap.appendChild(img);
+    slot.classList.remove('loading');
+  } catch {
+    slot.classList.remove('loading');
+    slot.classList.add('error');
+    imgWrap.innerHTML = '';
+    showPlaceholder(imgWrap);
+    const err = document.createElement('div');
+    err.className = 'error-msg';
+    err.textContent = 'Card not found';
+    imgWrap.appendChild(err);
+  }
+}
+
+// ── Clear a single slot ──────────────────────────────────────────
+function clearSlot(index, slot, input) {
+  input.value = '';
+  slot.classList.remove('loading', 'error');
+  state.pages[state.currentPage][index] = '';
+  saveState();
+  const imgWrap = slot.querySelector('.slot-image-wrap');
+  showPlaceholder(imgWrap);
+}
+
+// ── Render the full grid for the current page ────────────────────
+function renderGrid() {
+  const n    = state.gridSize;
+  const page = normalizePage(state.pages[state.currentPage] || []);
+  state.pages[state.currentPage] = page;
+
+  gridEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+  gridEl.innerHTML = '';
+
+  for (let i = 0; i < n * n; i++) {
+    const { slot, input, imgWrap } = buildSlot(i);
+    const name = page[i] || '';
+    input.value = name;
+    if (name) loadCardIntoSlot(name, slot, imgWrap);
+    gridEl.appendChild(slot);
+  }
+
+  // Update spine visibility
+  document.getElementById('binder').style.setProperty(
+    '--cols', n
+  );
+
+  updatePageInfo();
+}
+
+// ── Update pagination UI ─────────────────────────────────────────
+function updatePageInfo() {
+  const total = state.pages.length;
+  const cur   = state.currentPage + 1;
+  pageInfoEl.textContent = `Page ${cur} of ${total}`;
+  prevBtn.disabled = state.currentPage === 0;
+  nextBtn.disabled = state.currentPage === total - 1;
+  deletePageBtn.disabled = total <= 1;
+}
+
+// ── Switch to a different page ───────────────────────────────────
+function goToPage(index) {
+  state.currentPage = index;
+  saveState();
+  renderGrid();
+}
+
+// ── Add a new blank page ─────────────────────────────────────────
+function addPage() {
+  state.pages.push(Array(slotsPerPage()).fill(''));
+  state.currentPage = state.pages.length - 1;
+  saveState();
+  renderGrid();
+}
+
+// ── Delete the current page ──────────────────────────────────────
+function deletePage() {
+  if (state.pages.length <= 1) return;
+  if (!confirm('Delete this page?')) return;
+  state.pages.splice(state.currentPage, 1);
+  if (state.currentPage >= state.pages.length) {
+    state.currentPage = state.pages.length - 1;
+  }
+  saveState();
+  renderGrid();
+}
+
+// ── Change grid size ─────────────────────────────────────────────
+function changeGridSize(n) {
+  state.gridSize = n;
+  // Resize all pages
+  state.pages = state.pages.map(p => normalizePage(p));
+  saveState();
+  renderGrid();
+}
+
+// ── PDF Export ───────────────────────────────────────────────────
+async function exportPDF() {
+  const { jsPDF } = window.jspdf;
+
+  pdfOverlay.classList.add('active');
+  pdfBar.style.width = '0%';
+
+  try {
+    // Use landscape A4 if grid >= 4, else portrait
+    const isLandscape = state.gridSize >= 4;
+    const pdf = new jsPDF({
+      orientation: isLandscape ? 'landscape' : 'portrait',
+      unit: 'mm',
+      format: 'a4'
     });
 
-    card.appendChild(input);
-    card.appendChild(img);
-    grid.appendChild(card);
+    const totalPages = state.pages.length;
+
+    for (let pi = 0; pi < totalPages; pi++) {
+      pdfStatus.textContent = `Rendering page ${pi + 1} of ${totalPages}…`;
+      pdfBar.style.width = `${(pi / totalPages) * 100}%`;
+
+      // Switch to this page temporarily
+      const savedPage = state.currentPage;
+      state.currentPage = pi;
+      renderGrid();
+
+      // Wait for images to load
+      const imgs = gridEl.querySelectorAll('img');
+      await Promise.allSettled(
+        [...imgs].map(img =>
+          img.complete ? Promise.resolve() :
+            new Promise(res => { img.onload = res; img.onerror = res; })
+        )
+      );
+      // Extra settle time
+      await new Promise(r => setTimeout(r, 300));
+
+      const canvas = await html2canvas(document.getElementById('binder'), {
+        useCORS:         true,
+        allowTaint:      false,
+        backgroundColor: '#13131a',
+        scale:           2,
+        logging:         false
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = pdf.internal.pageSize.getHeight();
+
+      // Fit canvas into PDF page preserving aspect
+      const canvasRatio = canvas.height / canvas.width;
+      let w = pdfW - 10, h = w * canvasRatio;
+      if (h > pdfH - 10) { h = pdfH - 10; w = h / canvasRatio; }
+
+      if (pi > 0) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', (pdfW - w) / 2, (pdfH - h) / 2, w, h);
+
+      // Restore
+      state.currentPage = savedPage;
+    }
+
+    // Re-render original page
+    renderGrid();
+
+    pdfBar.style.width = '100%';
+    pdfStatus.textContent = 'Done! Saving…';
+    await new Promise(r => setTimeout(r, 400));
+
+    pdf.save('ygo-binder.pdf');
+  } catch (err) {
+    console.error('PDF export error:', err);
+    alert('PDF export failed. See console for details.');
+  } finally {
+    pdfOverlay.classList.remove('active');
+    renderGrid(); // ensure we're back to correct page
   }
-
-  container.appendChild(grid);
-  updatePageIndicator();
 }
 
-function updatePageIndicator() {
-  document.getElementById("pageIndicator").innerText =
-    `Page ${state.currentPage + 1} of ${state.pages.length}`;
-}
-
-function nextPage() {
-  state.currentPage++;
-  if (!state.pages[state.currentPage]) {
-    const size = state.gridSize * state.gridSize;
-    state.pages[state.currentPage] = Array(size).fill("");
-  }
-  save();
-  createGrid();
-}
-
-function prevPage() {
-  if (state.currentPage > 0) {
-    state.currentPage--;
-    save();
-    createGrid();
-  }
-}
-
-document.getElementById("gridSize").addEventListener("change", (e) => {
-  state.gridSize = parseInt(e.target.value);
-  state.pages = [[...Array(state.gridSize * state.gridSize)].map(() => "")];
-  state.currentPage = 0;
-  save();
-  createGrid();
+// ── Event wiring ─────────────────────────────────────────────────
+pageSizeEl.addEventListener('change', () => {
+  changeGridSize(Number(pageSizeEl.value));
 });
 
-async function downloadPDF() {
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF();
+prevBtn.addEventListener('click', () => {
+  if (state.currentPage > 0) goToPage(state.currentPage - 1);
+});
+nextBtn.addEventListener('click', () => {
+  if (state.currentPage < state.pages.length - 1) goToPage(state.currentPage + 1);
+});
 
-  for (let i = 0; i < state.pages.length; i++) {
-    state.currentPage = i;
-    createGrid();
+addPageBtn.addEventListener('click', addPage);
+deletePageBtn.addEventListener('click', deletePage);
 
-    await new Promise(r => setTimeout(r, 300));
+clearAllBtn.addEventListener('click', () => {
+  if (!confirm('Clear ALL pages and card data?')) return;
+  state.pages = [Array(slotsPerPage()).fill('')];
+  state.currentPage = 0;
+  saveState();
+  renderGrid();
+});
 
-    const canvas = await html2canvas(document.getElementById("binder"));
-    const imgData = canvas.toDataURL("image/png");
+pdfBtn.addEventListener('click', exportPDF);
 
-    if (i > 0) pdf.addPage();
-    pdf.addImage(imgData, "PNG", 10, 10, 190, 270);
-  }
+// ── Boot ─────────────────────────────────────────────────────────
+loadState();
+pageSizeEl.value = String(state.gridSize);
 
-  pdf.save("binder.pdf");
-  save();
+// Sanitize state in case of schema mismatch
+if (!Array.isArray(state.pages) || !state.pages.length) {
+  state.pages = [Array(slotsPerPage()).fill('')];
+  state.currentPage = 0;
 }
+if (state.currentPage >= state.pages.length) state.currentPage = 0;
 
-createGrid();
+renderGrid();
 </script>
-
 </body>
 </html>
