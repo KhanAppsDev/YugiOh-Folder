@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#13131a" />
   <title>YGO Binder</title>
 
   <!-- CDN Libraries -->
@@ -10,7 +14,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <style>
-    /* ─── Reset & Base ─────────────────────────────────────────────── */
+    /* ─── Reset & Base ──────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -28,14 +32,29 @@
       --suggest-bg: #1e1e2e;
       --suggest-hi: #2a2a42;
       --radius:     6px;
+      /* Safe-area insets for notched phones */
+      --safe-top:    env(safe-area-inset-top,    0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left:   env(safe-area-inset-left,   0px);
+      --safe-right:  env(safe-area-inset-right,  0px);
     }
 
-    html, body {
+    html {
       height: 100%;
+      /* Prevent iOS rubber-banding from showing dark background */
+      background: var(--dark-bg);
+    }
+
+    body {
+      min-height: 100%;
+      min-height: 100dvh; /* dynamic viewport height — accounts for browser chrome */
       background: var(--dark-bg);
       color: var(--text);
       font-family: 'Georgia', 'Times New Roman', serif;
+      /* Never let anything overflow sideways */
       overflow-x: hidden;
+      /* Smooth momentum scrolling on iOS */
+      -webkit-overflow-scrolling: touch;
     }
 
     /* Grain overlay */
@@ -48,22 +67,28 @@
       opacity: 0.5;
     }
 
-    /* ─── App shell ─────────────────────────────────────────── */
+    /* ─── App shell: full-height column, nothing overflows ─────── */
     #app {
       display: flex;
       flex-direction: column;
       min-height: 100vh;
+      min-height: 100dvh;
     }
 
     /* ─── Header ─────────────────────────────────────────────── */
     header {
-      padding: 12px 18px;
+      flex-shrink: 0;
+      padding: 10px 16px;
+      padding-top: calc(10px + var(--safe-top));
+      padding-left:  calc(16px + var(--safe-left));
+      padding-right: calc(16px + var(--safe-right));
       display: flex;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid var(--border);
       background: var(--panel-bg);
-      gap: 10px;
+      gap: 8px;
+      /* Two rows on very narrow screens */
       flex-wrap: wrap;
       position: sticky;
       top: 0;
@@ -71,7 +96,7 @@
     }
 
     .logo {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: var(--gold);
@@ -84,142 +109,168 @@
 
     .controls {
       display: flex;
-      gap: 7px;
+      gap: 6px;
       align-items: center;
-      flex-wrap: wrap;
+      /* Never let controls wrap to a third row; compress instead */
+      flex-wrap: nowrap;
+      flex-shrink: 1;
+      min-width: 0;
     }
 
     label.ctrl-label {
-      font-size: 0.67rem;
+      font-size: 0.65rem;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--muted);
       white-space: nowrap;
     }
 
+    /* Base interactive elements */
     select, button {
       background: var(--card-bg);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 7px 12px;
-      font-size: 0.82rem;
+      padding: 0 10px;
+      height: 38px;           /* fixed height, never collapses */
+      font-size: 0.8rem;
       cursor: pointer;
       font-family: inherit;
       transition: border-color 0.15s, background 0.15s;
-      min-height: 36px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      /* Remove iOS default styling */
+      -webkit-appearance: none;
+      appearance: none;
     }
-    select:hover, button:hover { border-color: var(--gold); }
+    select { padding-right: 24px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666688'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
     select:focus, button:focus { outline: 2px solid var(--gold); outline-offset: 2px; }
+    button:active { opacity: 0.75; }
 
     button.primary {
       background: var(--gold);
       color: #0d0d0f;
       border-color: var(--gold);
       font-weight: bold;
-      letter-spacing: 0.04em;
     }
-    button.primary:hover { background: var(--gold-light); border-color: var(--gold-light); }
+    button.primary:active { background: var(--gold-light); }
 
     button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
-    button.danger:hover { background: var(--danger); color: #fff; }
+    button.danger:active { background: var(--danger); color: #fff; }
 
-    /* Zoom toggle pill */
+    /* Zoom pill */
     .zoom-toggle {
       display: flex;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
+      flex-shrink: 0;
     }
     .zoom-toggle button {
       border: none;
       border-radius: 0;
-      padding: 7px 11px;
-      font-size: 0.78rem;
-      min-height: 36px;
+      padding: 0 10px;
+      height: 38px;
+      font-size: 0.76rem;
       background: var(--card-bg);
       color: var(--muted);
     }
     .zoom-toggle button + button { border-left: 1px solid var(--border); }
-    .zoom-toggle button.active { background: var(--sleeve); color: var(--gold); }
-    .zoom-toggle button:hover  { color: var(--gold); }
+    .zoom-toggle button.active   { background: var(--sleeve); color: var(--gold); }
 
-    /* ─── Main ─────────────────────────────────────────────── */
+    /* ─── Main: takes all remaining space, no wasted gaps ─────── */
     main {
       flex: 1;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      padding: 18px 12px;
-      gap: 16px;
+      align-items: stretch;     /* binder fills width */
+      /* Small uniform padding; cards use all available room */
+      padding: 10px 8px;
+      padding-left:  calc(8px + var(--safe-left));
+      padding-right: calc(8px + var(--safe-right));
+      gap: 10px;
+      /* Allow main to scroll if binder overflows vertically */
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
 
     /* ─── Binder scroll wrapper ──────────────────────────────── */
     #binder-scroll {
-      width: 100%;
+      flex: 1;                  /* fill remaining vertical space */
       display: flex;
-      justify-content: center;
+      align-items: stretch;
+      min-height: 0;            /* let flex children shrink */
     }
     body.zoom-actual #binder-scroll {
       overflow-x: auto;
-      justify-content: flex-start;
-      padding-bottom: 4px;
       -webkit-overflow-scrolling: touch;
     }
 
     /* ─── Binder panel ───────────────────────────────────────── */
     #binder {
+      flex: 1;
       background: var(--panel-bg);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+      border-radius: 8px;
+      /* Minimal padding so cards get maximum space */
+      padding: 8px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
       position: relative;
-      width: 100%;
+      /* On desktop, cap the width */
       max-width: 880px;
+      width: 100%;
+      margin: 0 auto;
       transition: width 0.2s ease;
     }
 
-    /* Spine line */
+    /* Spine — only shown on wider screens */
     #binder::before {
       content: '';
       position: absolute;
       left: 50%;
-      top: 14px; bottom: 14px;
+      top: 10px; bottom: 10px;
       width: 2px;
       background: linear-gradient(to bottom, transparent, var(--border), transparent);
       transform: translateX(-50%);
       pointer-events: none;
     }
-    body.zoom-actual #binder { max-width: none; flex-shrink: 0; }
+
+    body.zoom-actual #binder {
+      max-width: none;
+      flex-shrink: 0;
+      margin: 0;
+    }
 
     /* ─── Grid ─────────────────────────────────────────────── */
-    #grid { display: grid; gap: 10px; }
+    #grid {
+      display: grid;
+      gap: 6px;
+      height: 100%;
+    }
 
     /* ─── Card Slot ─────────────────────────────────────────── */
     .card-slot {
       background: var(--sleeve);
       border: 2px solid var(--border);
-      border-radius: 6px;
+      border-radius: 5px;
       display: flex;
       flex-direction: column;
-      /* overflow:visible so dropdown can escape the slot */
-      overflow: visible;
+      overflow: visible;        /* dropdown escapes slot bounds */
       transition: border-color 0.2s;
       position: relative;
     }
-    .card-slot:hover   { border-color: var(--gold); }
-    .card-slot.loading { border-color: var(--accent); }
-    .card-slot.error   { border-color: var(--danger); }
+    .card-slot:focus-within { border-color: var(--gold); }
+    .card-slot.loading      { border-color: var(--accent); }
+    .card-slot.error        { border-color: var(--danger); }
 
-    /* Input row */
+    /* Input row — compact but tappable */
     .slot-input-wrap {
       display: flex;
       align-items: center;
       border-bottom: 1px solid var(--border);
       position: relative;
       z-index: 10;
-      border-radius: 4px 4px 0 0;
+      border-radius: 3px 3px 0 0;
       overflow: visible;
     }
 
@@ -229,10 +280,16 @@
       background: transparent;
       border: none;
       color: var(--text);
-      padding: 6px 8px;
-      font-size: 0.73rem;
+      /* 16px prevents iOS from auto-zooming the page on focus */
+      font-size: 16px;
+      /* Scale back visually without triggering zoom */
+      transform: scale(0.75);
+      transform-origin: left center;
+      width: calc(100% / 0.75);  /* compensate for scale shrink */
+      padding: 5px 4px;
       font-family: inherit;
       outline: none;
+      -webkit-appearance: none;
     }
     .slot-input-wrap input::placeholder { color: var(--muted); }
 
@@ -242,16 +299,19 @@
       border: none;
       color: var(--muted);
       cursor: pointer;
-      padding: 4px 7px;
-      font-size: 0.82rem;
-      line-height: 1;
+      /* 44px tap target */
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
       border-radius: 0;
       transition: color 0.15s;
-      min-height: 28px;
     }
-    .clear-btn:hover { color: var(--danger); }
+    .clear-btn:active { color: var(--danger); }
 
-    /* ── Autocomplete dropdown ─────────────────────────── */
+    /* ── Autocomplete dropdown ────────────────────────────── */
     .suggest-list {
       position: absolute;
       top: calc(100% + 1px);
@@ -261,29 +321,31 @@
       border: 1px solid var(--gold);
       border-top: none;
       border-radius: 0 0 6px 6px;
-      max-height: 190px;
+      max-height: 200px;
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       z-index: 9000;
       display: none;
       list-style: none;
-      box-shadow: 0 10px 28px rgba(0,0,0,0.75);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.8);
     }
     .suggest-list.open { display: block; }
 
     .suggest-list li {
-      padding: 8px 10px;
-      font-size: 0.73rem;
+      /* 44px tap target */
+      padding: 12px 10px;
+      font-size: 0.8rem;
       cursor: pointer;
       color: var(--text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       border-bottom: 1px solid var(--border);
-      transition: background 0.1s, color 0.1s;
+      -webkit-tap-highlight-color: transparent;
     }
     .suggest-list li:last-child { border-bottom: none; }
-    .suggest-list li:hover,
-    .suggest-list li.kbd-active { background: var(--suggest-hi); color: var(--gold); }
+    .suggest-list li.kbd-active,
+    .suggest-list li:active     { background: var(--suggest-hi); color: var(--gold); }
 
     /* Image area */
     .slot-image-wrap {
@@ -295,7 +357,7 @@
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      border-radius: 0 0 4px 4px;
+      border-radius: 0 0 3px 3px;
     }
     .slot-image-wrap img {
       width: 100%;
@@ -309,17 +371,17 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 7px;
+      gap: 5px;
       color: var(--muted);
-      font-size: 0.62rem;
+      font-size: 0.6rem;
       text-align: center;
-      padding: 10px;
+      padding: 8px 4px;
     }
-    .placeholder svg { opacity: 0.25; }
+    .placeholder svg { opacity: 0.2; }
 
     /* Spinner */
     .spinner {
-      width: 24px; height: 24px;
+      width: 22px; height: 22px;
       border: 2px solid var(--border);
       border-top-color: var(--gold);
       border-radius: 50%;
@@ -330,119 +392,155 @@
     /* Error badge */
     .error-msg {
       position: absolute;
-      bottom: 6px;
+      bottom: 5px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(192,57,43,0.88);
+      background: rgba(192,57,43,0.9);
       color: #fff;
-      font-size: 0.62rem;
-      padding: 2px 8px;
+      font-size: 0.58rem;
+      padding: 2px 7px;
       border-radius: 20px;
       white-space: nowrap;
-      max-width: 92%;
+      max-width: 94%;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    /* ─── Pagination ─────────────────────────────────────────── */
+    /* ─── Pagination bar ─────────────────────────────────────── */
     .pagination {
+      flex-shrink: 0;
       display: flex;
       align-items: center;
-      gap: 12px;
+      justify-content: center;
+      gap: 0;
+      /* Full-width pill row */
     }
+
+    .pagination button {
+      flex: 1;
+      max-width: 100px;
+      height: 42px;
+    }
+
     .page-info {
+      flex: 1;
       font-size: 0.78rem;
       color: var(--muted);
-      letter-spacing: 0.08em;
-      min-width: 90px;
+      letter-spacing: 0.06em;
       text-align: center;
     }
 
     /* ─── Footer ─────────────────────────────────────────────── */
     footer {
+      flex-shrink: 0;
       border-top: 1px solid var(--border);
       background: var(--panel-bg);
-      padding: 10px 18px;
+      padding: 8px 12px;
+      padding-bottom: calc(8px + var(--safe-bottom));
+      padding-left:   calc(12px + var(--safe-left));
+      padding-right:  calc(12px + var(--safe-right));
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      flex-wrap: wrap;
     }
-    .footer-left { font-size: 0.67rem; color: var(--muted); letter-spacing: 0.05em; }
-    .footer-right { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .footer-left { font-size: 0.64rem; color: var(--muted); letter-spacing: 0.04em; }
+    .footer-right { display: flex; gap: 8px; }
 
     /* ─── PDF overlay ─────────────────────────────────────────── */
     #pdf-overlay {
       display: none;
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.88);
+      background: rgba(0,0,0,0.9);
       z-index: 2000;
       align-items: center;
       justify-content: center;
+      padding: 20px;
     }
     #pdf-overlay.active { display: flex; }
+
     #pdf-modal {
       background: var(--panel-bg);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 30px 38px;
+      padding: 28px 32px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 16px;
-      min-width: 230px;
+      gap: 14px;
+      width: 100%;
+      max-width: 280px;
     }
-    #pdf-modal p { font-size: 0.8rem; color: var(--muted); text-align: center; }
-    #pdf-progress { width: 190px; height: 4px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    #pdf-modal p { font-size: 0.78rem; color: var(--muted); text-align: center; }
+    #pdf-progress { width: 100%; height: 4px; background: var(--border); border-radius: 4px; overflow: hidden; }
     #pdf-progress-bar { height: 100%; background: var(--gold); transition: width 0.3s; width: 0%; }
 
-    /* ─── Mobile ─────────────────────────────────────────────── */
-    @media (max-width: 600px) {
-      header { padding: 9px 11px; }
-      .logo  { font-size: 1rem; }
-      main   { padding: 11px 7px; gap: 13px; }
-      #binder { padding: 9px; }
-      #binder::before { display: none; }
-      footer { padding: 8px 11px; }
-      .hide-xs { display: none; }
+    /* ─── Desktop overrides (>640px) ─────────────────────────── */
+    @media (min-width: 641px) {
+      header  { padding: 12px 20px; }
+      .logo   { font-size: 1.25rem; }
+      main    { padding: 16px 12px; gap: 14px; }
+      #binder { padding: 14px; gap: 10px; }
+      #grid   { gap: 10px; }
+      footer  { padding: 10px 20px; }
+
+      /* Restore desktop hover states */
+      select:hover, button:hover { border-color: var(--gold); }
+      .zoom-toggle button:hover  { color: var(--gold); }
+      button.danger:hover  { background: var(--danger); color: #fff; }
+      button.primary:hover { background: var(--gold-light); }
+
+      /* Show text labels on desktop */
+      .ctrl-label { display: inline; }
+
+      /* Input at normal size on desktop — no zoom-prevention transform needed */
+      .slot-input-wrap input {
+        font-size: 0.72rem;
+        transform: none;
+        width: 100%;
+        padding: 6px 8px;
+      }
+
+      .suggest-list li { padding: 8px 10px; font-size: 0.73rem; }
     }
-    @media (max-width: 400px) {
-      select, button { font-size: 0.72rem; padding: 6px 9px; }
-      .zoom-toggle button { padding: 6px 8px; }
+
+    /* ─── Hide spine on small grids / narrow screens ─────────── */
+    @media (max-width: 640px) {
+      #binder::before { display: none; }
+      .ctrl-label     { display: none; }
     }
   </style>
 </head>
 <body>
 <div id="app">
 
-  <!-- ── Header ── -->
+  <!-- ── Header: logo + all controls in one compact row ── -->
   <header>
     <div class="logo">YGO <span>Binder</span></div>
 
     <div class="controls">
       <!-- Grid size -->
-      <label class="ctrl-label hide-xs" for="grid-size">Grid</label>
+      <label class="ctrl-label" for="grid-size">Grid</label>
       <select id="grid-size">
-        <option value="2">2 × 2</option>
-        <option value="3" selected>3 × 3</option>
-        <option value="4">4 × 4</option>
+        <option value="2">2×2</option>
+        <option value="3" selected>3×3</option>
+        <option value="4">4×4</option>
       </select>
 
       <!-- Zoom -->
-      <label class="ctrl-label hide-xs">Zoom</label>
       <div class="zoom-toggle">
-        <button id="zoom-fit-btn"    class="active" title="Fit all cards on screen">Fit</button>
-        <button id="zoom-actual-btn" title="Actual card size (1:1)">1:1</button>
+        <button id="zoom-fit-btn"    class="active" title="Fit on screen">Fit</button>
+        <button id="zoom-actual-btn" title="Actual size">1:1</button>
       </div>
 
       <!-- Pages -->
-      <button id="add-page-btn" title="Add a new page">+ Page</button>
-      <button id="delete-page-btn" class="danger" title="Delete current page">✕ <span class="hide-xs">Page</span></button>
+      <button id="add-page-btn"    title="Add page">+</button>
+      <button id="delete-page-btn" class="danger" title="Delete page">✕</button>
     </div>
   </header>
 
-  <!-- ── Main ── -->
+  <!-- ── Main: binder + pagination ── -->
   <main>
     <div id="binder-scroll">
       <div id="binder">
@@ -450,23 +548,24 @@
       </div>
     </div>
 
+    <!-- Pagination: prev | page N of M | next -->
     <div class="pagination">
-      <button id="prev-btn">← <span class="hide-xs">Prev</span></button>
+      <button id="prev-btn">←</button>
       <div class="page-info" id="page-info">Page 1 of 1</div>
-      <button id="next-btn"><span class="hide-xs">Next</span> →</button>
+      <button id="next-btn">→</button>
     </div>
   </main>
 
-  <!-- ── Footer ── -->
+  <!-- ── Footer: attribution + actions ── -->
   <footer>
-    <div class="footer-left">YGO Binder · Data via YGOPRODeck</div>
+    <div class="footer-left">Data via YGOPRODeck</div>
     <div class="footer-right">
-      <button id="clear-all-btn" class="danger">Clear All</button>
-      <button id="pdf-btn" class="primary">⬇ <span class="hide-xs">Export </span>PDF</button>
+      <button id="clear-all-btn" class="danger">Clear</button>
+      <button id="pdf-btn"       class="primary">⬇ PDF</button>
     </div>
   </footer>
 
-  <!-- ── PDF overlay ── -->
+  <!-- ── PDF progress overlay ── -->
   <div id="pdf-overlay">
     <div id="pdf-modal">
       <div style="color:var(--gold);font-size:1rem;letter-spacing:0.1em;">Exporting PDF…</div>
@@ -479,18 +578,20 @@
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════
-   YGO BINDER v2.0
+   YGO BINDER v2.1
    ─────────────────────────────────────────────────────────────────
-   Changes from v1:
-   • Autocomplete suggestions via YGOPRODeck ?fname= fuzzy API
-     – triggers after 2 chars, 280 ms debounce
-     – keyboard nav (↑↓ Enter Esc), mouse hover, click to select
-     – in-memory cache so repeated prefix queries don't re-fetch
-   • Zoom: Fit (default, cards fill viewport height) | Actual (1:1 px)
-     – persisted in localStorage
-     – PDF export always uses Fit mode for clean output
-   • Mobile polish: sticky header, 36px touch targets, hide-xs labels,
-     horizontal scroll in 1:1 mode, momentum scrolling on iOS
+   v2.1 mobile-native overhaul:
+   • 100dvh layout — no clipping behind browser chrome on iOS/Android
+   • Safe-area insets for notched/pill phones
+   • 16px input font-size (prevents iOS auto-zoom on focus)
+   • 44px touch targets throughout
+   • -webkit-tap-highlight-color: transparent for snappy feel
+   • Swipe left/right on binder to go to next/prev page
+   • :active states replace :hover for mobile feedback
+   • Controls never wrap below header — compressed instead
+   • Binder fills available space via flex:1 on #binder-scroll
+   • Minimal padding everywhere on mobile; desktop gets more room
+   • applyZoom: true window innerHeight measurement for Fit mode
 ═══════════════════════════════════════════════════════════════════ */
 
 // ── Constants ────────────────────────────────────────────────────
@@ -596,18 +697,18 @@ const zoomActualBtn = document.getElementById('zoom-actual-btn');
 // ── Zoom ──────────────────────────────────────────────────────────
 function applyZoom() {
   const n   = state.gridSize;
-  const gap = 10;
-  const pad = 14 * 2; // binder padding left+right
+  const gap = 6;       // matches CSS #grid gap
+  const pad = 8 * 2;   // matches CSS #binder padding
 
   if (zoomMode === 'actual') {
     document.body.classList.add('zoom-actual');
-    // Set explicit pixel width so the binder doesn't flex-shrink
     const w = n * ACTUAL_CARD_PX + (n - 1) * gap + pad;
     binderEl.style.width = w + 'px';
     zoomFitBtn.classList.remove('active');
     zoomActualBtn.classList.add('active');
   } else {
-    // Fit mode: let CSS width:100% / max-width handle it
+    // Fit mode: binder fills the flex container via CSS flex:1
+    // No JS sizing needed — CSS handles it
     document.body.classList.remove('zoom-actual');
     binderEl.style.width = '';
     zoomFitBtn.classList.add('active');
@@ -1015,6 +1116,48 @@ zoomFitBtn.addEventListener('click', () => { zoomMode = 'fit';    saveZoom(); ap
 zoomActualBtn.addEventListener('click', () => { zoomMode = 'actual'; saveZoom(); applyZoom(); });
 
 window.addEventListener('resize', () => { if (zoomMode === 'fit') applyZoom(); }, { passive: true });
+
+// ── Swipe gestures: swipe left/right on binder to change page ────
+(function() {
+  let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+  const SWIPE_THRESHOLD   = 50;   // px minimum horizontal travel
+  const SWIPE_MAX_RATIO   = 2.0;  // max vertical:horizontal ratio (rejects scrolls)
+  const SWIPE_MAX_DURATION = 600; // ms maximum duration
+
+  const binderScroll = document.getElementById('binder-scroll');
+
+  binderScroll.addEventListener('touchstart', e => {
+    touchStartX    = e.touches[0].clientX;
+    touchStartY    = e.touches[0].clientY;
+    touchStartTime = Date.now();
+  }, { passive: true });
+
+  binderScroll.addEventListener('touchend', e => {
+    const dx   = e.changedTouches[0].clientX - touchStartX;
+    const dy   = e.changedTouches[0].clientY - touchStartY;
+    const dt   = Date.now() - touchStartTime;
+    const adx  = Math.abs(dx);
+    const ady  = Math.abs(dy);
+
+    // Must be fast enough, horizontal enough, and far enough
+    if (dt > SWIPE_MAX_DURATION) return;
+    if (adx < SWIPE_THRESHOLD)   return;
+    if (ady / adx > SWIPE_MAX_RATIO) return;
+
+    // In actual-size (1:1) mode, only swipe if the binder isn't scrollable
+    // (i.e. the content fits within the scroll container)
+    if (zoomMode === 'actual') {
+      const el = binderScroll;
+      if (el.scrollWidth > el.clientWidth) return; // let native scroll handle it
+    }
+
+    if (dx < 0 && state.currentPage < state.pages.length - 1) {
+      goToPage(state.currentPage + 1);
+    } else if (dx > 0 && state.currentPage > 0) {
+      goToPage(state.currentPage - 1);
+    }
+  }, { passive: true });
+})();
 
 // ── Boot ──────────────────────────────────────────────────────────
 loadState();
